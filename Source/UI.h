@@ -407,7 +407,7 @@ struct AmpHeadView : DynView
         {
             const float tx = gr.getX() + gr.getWidth() * (0.14f + 0.24f * (float) i), ty = gr.getBottom() - 8.0f;
             g.setGradientFill (ColourGradient (Colour (0xffff8a2a).withAlpha (0.18f + 0.55f * glow), tx, ty, Colour (0x00ff8a2a), tx, gr.getY(), false));
-            g.fillRect (tx - 16, gr.getY(), 32, gr.getHeight());
+            g.fillRect (tx - 16.0f, gr.getY(), 32.0f, gr.getHeight());
         }
         {
             Graphics::ScopedSaveState ss (g); g.reduceClipRegion (gr.toNearestInt());
