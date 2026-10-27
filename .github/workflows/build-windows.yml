@@ -1,0 +1,99 @@
+name: Build ORYMY Bass (Windows x64)
+
+on:
+  push:
+    branches:
+      - main
+      - "ci/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build VST3, Standalone and installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure x64 build
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build VST3 and Standalone
+        run: cmake --build build --config Release --parallel
+
+      - name: Verify build outputs
+        shell: pwsh
+        run: |
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'build\ORYMYBass_artefacts\Release'
+          $expected = @(
+            (Join-Path $buildDir 'VST3\ORYMY Bass.vst3'),
+            (Join-Path $buildDir 'Standalone\ORYMY Bass.exe')
+          )
+          foreach ($path in $expected) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Expected build output was not found: $path"
+            }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $iscc = Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Failed to install Inno Setup.'
+            }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            throw "ISCC.exe was not found at: $iscc"
+          }
+
+      - name: Package installer and distributable files
+        shell: pwsh
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE
+          $buildDir = Join-Path $workspace 'build\ORYMYBass_artefacts\Release'
+          $dist = Join-Path $workspace 'dist'
+          New-Item -ItemType Directory -Path $dist -Force | Out-Null
+
+          $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $iscc = Join-Path $programFilesX86 'Inno Setup 6\ISCC.exe'
+          Push-Location (Join-Path $workspace 'Installer')
+          try {
+            Remove-Item -LiteralPath 'Output' -Recurse -Force -ErrorAction SilentlyContinue
+            & $iscc '/DAppVersion=1.0.0' '/DBuildDir=..\build\ORYMYBass_artefacts\Release' 'setup.iss'
+            if ($LASTEXITCODE -ne 0) {
+              throw "Inno Setup failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Pop-Location
+          }
+
+          $setup = Join-Path $workspace 'Installer\Output\ORYMY_Bass_Setup_1.0.0.exe'
+          $plugin = Join-Path $buildDir 'VST3\ORYMY Bass.vst3'
+          $standalone = Join-Path $buildDir 'Standalone\ORYMY Bass.exe'
+          foreach ($path in @($setup, $plugin, $standalone)) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Required distribution file was not created: $path"
+            }
+          }
+
+          Copy-Item -LiteralPath $setup -Destination (Join-Path $dist 'ORYMY_Bass_Setup_1.0.0.exe') -Force
+          Copy-Item -LiteralPath $standalone -Destination (Join-Path $dist 'ORYMY_Bass_Standalone.exe') -Force
+          Compress-Archive -Path $plugin -DestinationPath (Join-Path $dist 'ORYMY_Bass_VST3.zip') -Force
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORYMY-Bass-Windows-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
