@@ -16,7 +16,7 @@ permissions:
 jobs:
   build-windows:
     name: Build VST3, Standalone and installer
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
